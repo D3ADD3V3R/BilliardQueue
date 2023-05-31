@@ -1,112 +1,115 @@
 #include "Display.h"
 
-CounterDisplay::CounterDisplay() : spr(&this->disp){}
+#define SCREEN_WIDTH this->disp.width()   //
+#define SCREEN_HEIGHT this->disp.height() // Taille de l'écran
 
-void CounterDisplay::Init(){
-    #ifdef DEBUG
-    Serial.println("Initialise Display");
-    #endif
-    this->disp.init();
-    this->disp.setRotation(1);
-#ifdef DRAW_DIGITS
-  // Loading a font takes a few milliseconds, so for test purposes it is done outside the test loop
-  if (ofr.loadFont(TTF_FONT, sizeof(TTF_FONT))) {
-    Serial.println("Render initialize error");
-    return;
-  }
-#endif
-}
+CounterDisplay::CounterDisplay() : spr(&this->disp) {}
 
-void CounterDisplay::Loop(){
-    if((this->lastFrameTimeStamp + this->millisPerFrame) < millis()){
-        this->lastFrameTimeStamp = millis();
-        this->disp.fillScreen(DARKER_GREY);
+const uint16_t MAX_ITERATION = 300; // Nombre de couleurs
+static float zoom = 0.5;
 
-    }
-}
-
-void CounterDisplay::ringMeter(int x, int y, int r, int val, const char *units, uint32_t backgroundColor, uint32_t frontColor)
+void CounterDisplay::Init()
 {
-  static uint16_t last_angle = 30;
-
-    last_angle = 30;
-    disp.fillCircle(x, y, r, DARKER_GREY);
-    disp.drawSmoothCircle(x, y, r, TFT_SILVER, DARKER_GREY);
-    uint16_t tmp = r - 3;
-    disp.drawArc(x, y, tmp, tmp - tmp / 5, last_angle, 330, TFT_BLACK, DARKER_GREY);
-
-  r -= 3;
-
-  // Range here is 0-100 so value is scaled to an angle 30-330
-  int val_angle = map(val, 0, 100, 30, 330);
-
-
-  if (last_angle != val_angle) {
-    // Could load the required font here
-    //if (ofr.loadFont(TTF_FONT, sizeof(TTF_FONT))) {
-    //  Serial.println("Render initialize error");
-    //  return;
-    //}
-#ifdef DRAW_DIGITS
-    ofr.setDrawer(spr); // Link renderer to sprite (font will be rendered in sprite spr)
-
-    // Add value in centre if radius is a reasonable size
-    if ( r >= 25 ) {
-      // This code gets the font dimensions in pixels to determine the required the sprite size
-      ofr.setFontSize((6 * r) / 4);
-      ofr.setFontColor(TFT_WHITE, DARKER_GREY);
-
-
-      // The OpenFontRender library only has simple print functions...
-      // Digit jiggle for chaging values often happens with proportional fonts because
-      // digit glyph width varies ( 1 narrower that 4 for example). This code prints up to
-      // 3 digits with even spacing.
-      // A few experiemntal fudge factors are used here to position the
-      // digits in the sprite...
-      // Create a sprite to draw the digits into
-      uint8_t w = ofr.getTextWidth("444");
-      uint8_t h = ofr.getTextHeight("4") + 4;
-      spr.createSprite(w, h + 2);
-      spr.fillSprite(DARKER_GREY); // (TFT_BLUE); // (DARKER_GREY);
-      char str_buf[8];         // Buffed for string
-      itoa (val, str_buf, 10); // Convert value to string (null terminated)
-      uint8_t ptr = 0;         // Pointer to a digit character
-      uint8_t dx = 4;          // x offfset for cursor position
-      if (val < 100) dx = ofr.getTextWidth("4") / 2; // Adjust cursor x for 2 digits
-      if (val < 10) dx = ofr.getTextWidth("4");      // Adjust cursor x for 1 digit
-      while ((uint8_t)str_buf[ptr] != 0) ptr++;      // Count the characters
-      while (ptr) {
-        ofr.setCursor(w - dx - w / 20, -h / 2.5);    // Offset cursor position in sprtie
-        ofr.rprintf(str_buf + ptr - 1);              // Draw a character
-        str_buf[ptr - 1] = 0;                        // Replace character with a null
-        dx += 1 + w / 3;                             // Adjust cursor for next character
-        ptr--;                                       // Decrement character pointer
-      }
-      spr.pushSprite(x - w / 2, y - h / 2); // Push sprite containing the val number
-      spr.deleteSprite();                   // Recover used memory
-
-      // Make the TFT the print destination, print the units label direct to the TFT
-      ofr.setDrawer(disp);
-      ofr.setFontColor(TFT_GOLD, DARKER_GREY);
-      ofr.setFontSize(r / 2.0);
-      ofr.setCursor(x, y + (r * 0.4));
-      ofr.cprintf("Watts");
-    }
+#ifdef DEBUG
+  Serial.println("Initialise Display");
 #endif
+  this->disp.init();
+  this->disp.setRotation(1);
+  // this->disp.resetViewport();
+  this->hasChange = true;
+  this->disp.fillScreen(TFT_BLACK);
+  this->disp.setFreeFont(&FreeMono9pt7b);
+}
 
-    //ofr.unloadFont(); // Recover space used by font metrics etc
+void CounterDisplay::Loop()
+{
+  if (this->hasChange && (this->lastFrameTimeStamp + this->millisPerFrame) < millis())
+  {
+    this->hasChange = false;
+    this->disp.fillScreen(TFT_BLACK);
+  }
+}
 
-    // Allocate a value to the arc thickness dependant of radius
-    uint8_t thickness = r / 5;
-    if ( r < 25 ) thickness = r / 3;
+void CounterDisplay::drawRing(uint16_t val)
+{
+  uint16_t endAngle = map(val, 0, 100, 0, 360);
+  this->disp.drawArc(50, 100, 25, 23, 0, endAngle, TFT_RED, TFT_BLACK);
+}
 
-    // Update the arc, only the zone between last_angle and new val_angle is updated
-    if (val_angle > last_angle) {
-      disp.drawArc(x, y, r, r - thickness, last_angle, val_angle, TFT_SKYBLUE, TFT_BLACK); // TFT_SKYBLUE random(0x10000)
+void CounterDisplay::drawUpdateMessage(uint8_t perc)
+{
+  if ((this->lastFrameTimeStamp + this->millisPerFrame) < millis())
+  {
+    this->lastFrameTimeStamp = millis();
+
+    this->disp.fillScreen(TFT_BLACK);
+    this->disp.setTextColor(TFT_WHITE);
+    this->disp.setTextSize(1);         // Textgröße festlegen
+    this->disp.setTextDatum(MC_DATUM); // Textausrichtung auf die Mitte setzen
+
+    char *updateMessage = "Update in Progress";
+
+    uint8_t yPos = (this->disp.height() - this->disp.fontHeight(2)) / 2;
+    uint8_t xPos = (this->disp.width() - this->disp.textWidth(updateMessage)) / 2;
+
+    this->disp.setCursor(xPos, yPos);
+    this->disp.print(updateMessage);
+
+    yPos = this->disp.height() - 25;
+    sprintf(updateMessage, "Progress: %i\%", perc);
+    
+    xPos = (this->disp.width()-100) / 2;
+    this->disp.drawWideLine(xPos, yPos - 10, xPos + perc, yPos - 10, 5, TFT_CYAN);
+    xPos = (this->disp.width() - this->disp.textWidth(updateMessage)) / 2;
+    this->disp.setCursor(xPos, yPos);
+    this->disp.print(updateMessage);
+  }
+}
+
+void CounterDisplay::draw_Julia(float c_r, float c_i, float zoom)
+{
+
+  this->disp.setCursor(0, 0);
+  float new_r = 0.0, new_i = 0.0, old_r = 0.0, old_i = 0.0;
+
+  /* Pour chaque pixel en X */
+
+  for (int16_t x = SCREEN_WIDTH / 2 - 1; x >= 0; x--)
+  { // Rely on inverted symettry
+    /* Pour chaque pixel en Y */
+    for (uint16_t y = 0; y < SCREEN_HEIGHT; y++)
+    {
+      old_r = 1.5 * (x - SCREEN_WIDTH / 2) / (0.5 * zoom * SCREEN_WIDTH);
+      old_i = (y - SCREEN_HEIGHT / 2) / (0.5 * zoom * SCREEN_HEIGHT);
+      uint16_t i = 0;
+
+      while ((old_r * old_r + old_i * old_i) < 4.0 && i < MAX_ITERATION)
+      {
+        new_r = old_r * old_r - old_i * old_i;
+        new_i = 2.0 * old_r * old_i;
+
+        old_r = new_r + c_r;
+        old_i = new_i + c_i;
+
+        i++;
+      }
+      /* Affiche le pixel */
+      if (i < 100)
+      {
+        this->disp.drawPixel(x, y, this->disp.color565(255, 255, map(i, 0, 100, 255, 0)));
+        this->disp.drawPixel(SCREEN_WIDTH - x - 1, SCREEN_HEIGHT - y - 1, this->disp.color565(255, 255, map(i, 0, 100, 255, 0)));
+      }
+      if (i < 200)
+      {
+        this->disp.drawPixel(x, y, this->disp.color565(255, map(i, 100, 200, 255, 0), 0));
+        this->disp.drawPixel(SCREEN_WIDTH - x - 1, SCREEN_HEIGHT - y - 1, this->disp.color565(255, map(i, 100, 200, 255, 0), 0));
+      }
+      else
+      {
+        this->disp.drawPixel(x, y, this->disp.color565(map(i, 200, 300, 255, 0), 0, 0));
+        this->disp.drawPixel(SCREEN_WIDTH - x - 1, SCREEN_HEIGHT - y - 1, this->disp.color565(map(i, 200, 300, 255, 0), 0, 0));
+      }
+      yield();
     }
-    else {
-      disp.drawArc(x, y, r, r - thickness, val_angle, last_angle, TFT_BLACK, DARKER_GREY);
-    }
-    last_angle = val_angle; // Store meter arc position for next redraw
   }
 }

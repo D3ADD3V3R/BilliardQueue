@@ -77,7 +77,7 @@ void setup()
   pinMode(FORWARD_BUTTON, INPUT_PULLUP);
   Serial.begin(115200);
   Serial.println("\n");
-  Serial.println("BilliardQueue - CounterController - V0.1");
+  Serial.println("BilliardQueue - CounterController - V0.2");
   DeviceDoc["Type"] = "KeepAlive";
   DeviceDoc["DeviceType"] = DEVICE_TYPE;
   DeviceDoc["DeviceID"] = DEVICE_ID;
@@ -157,11 +157,12 @@ void loop()
     long now = millis();
     if (now - lastReconnectAttemptTime > 2000)
     {
-      Serial.println("Reconnecting to MQTT Broker");
+      Serial.print("Reconnecting to MQTT Broker");
       lastReconnectAttemptTime = now;
       // Attempt to reconnect
       if (reconnectMQTTNonBlocking())
       {
+        Serial.println("... connected");
         lastReconnectAttemptTime = 0;
       }
     }
@@ -223,7 +224,7 @@ void loop()
 
 void handleOTAEnd()
 {
-  Serial.println("\nOTA-End");
+  Serial.println("\nOTA-Update finished. Rebooting ....\n");
 }
 
 void handleOTAStart()
@@ -237,12 +238,24 @@ void handleOTAStart()
   { // U_FS
     type = "filesystem";
   }
+  tft.drawUpdateMessage(0);
   Serial.println("Start updating " + type);
 }
 
 void handleOTAProgress(unsigned int progress, unsigned int total)
 {
-  Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+  uint8_t perc = (progress / (total / 100));
+  uint8_t step = (perc/2);
+  Serial.print("Downloading: [");
+  for(uint8_t i = 0; i < step; i++){
+    Serial.print("=");
+  }
+  for(uint8_t i = 0; i < (50 - step); i++){
+    Serial.print(" ");
+  }
+
+  // tft.drawUpdateMessage(0);
+  Serial.printf("] %u%% \t(%u\t|%u)\r", perc, progress, total);
 }
 
 void handleOTAError(ota_error_t error)
